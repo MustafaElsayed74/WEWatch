@@ -12,7 +12,7 @@ export async function POST(request) {
         // Authenticate the user if needed here.
         // For our MVP, we allow anonymous uploads.
         return {
-          allowedContentTypes: ['video/mp4', 'video/webm', 'video/quicktime', 'video/x-matroska'],
+          allowedContentTypes: ['video/mp4', 'video/webm', 'video/quicktime', 'video/x-matroska', 'video/x-msvideo', 'application/octet-stream', 'video/avi', 'video/mpeg'],
           tokenPayload: JSON.stringify({
             // optional payload
           }),
