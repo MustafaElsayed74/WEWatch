@@ -16,6 +16,7 @@ export async function POST(request) {
       access: 'public',
       addRandomSuffix: false,
       contentType: 'application/json',
+      token: process.env.BLOB_READ_WRITE_TOKEN,
     });
 
     return NextResponse.json({ success: true, url: blob.url });
