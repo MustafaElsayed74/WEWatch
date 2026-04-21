@@ -1,6 +1,6 @@
 const { put } = require('@vercel/blob');
 
-const token = "vercel_blob_rw_8jOHIDjXT9PgEiEH_SEr9kvmc6JFBrFD74L1J8skGe1kWFJ";
+const token = "vercel_blob_rw_KnYfyYY3j7bNMGjA_CyUm2yPWiKl1SWzmp7iJGyV7SQ8hIO";
 
 async function run() {
   try {

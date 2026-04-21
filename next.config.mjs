@@ -1,7 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   env: {
-    BLOB_READ_WRITE_TOKEN: "vercel_blob_rw_8jOHIDjXT9PgEiEH_SEr9kvmc6JFBrFD74L1J8skGe1kWFJ",
+    BLOB_READ_WRITE_TOKEN: "vercel_blob_rw_KnYfyYY3j7bNMGjA_CyUm2yPWiKl1SWzmp7iJGyV7SQ8hIO",
   },
 };
 

@@ -1,6 +1,5 @@
+import { put, head } from '@vercel/blob';
 import { NextResponse } from 'next/server';
-
-const KVDB_BUCKET = 'JihU9zcJHZNzyUAdw2ifg4';
 
 export async function POST(request) {
   try {
@@ -10,16 +9,17 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Missing roomId or state' }, { status: 400 });
     }
 
-    // Save the state to kvdb.io (a free public key-value store)
-    // This completely bypasses Vercel Blob's private store restrictions
-    const url = `https://kvdb.io/${KVDB_BUCKET}/${roomId}`;
-    await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(state),
+    // Save the state as a JSON file in Vercel Blob
+    // addRandomSuffix: false means it will overwrite the file, effectively keeping our state updated
+    const blobName = `rooms/${roomId}.json`;
+    const blob = await put(blobName, JSON.stringify(state), {
+      access: 'public',
+      addRandomSuffix: false,
+      contentType: 'application/json',
+      token: process.env.BLOB_READ_WRITE_TOKEN,
     });
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, url: blob.url });
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
@@ -34,8 +34,13 @@ export async function GET(request) {
   }
 
   try {
-    const url = `https://kvdb.io/${KVDB_BUCKET}/${roomId}?t=${Date.now()}`;
-    const response = await fetch(url, {
+    const blobName = `rooms/${roomId}.json`;
+    
+    // Instead of using list/head which can be slow or cached incorrectly,
+    // we fetch the Blob URL directly. However, we add a timestamp to bypass edge cache!
+    const url = `https://${process.env.BLOB_READ_WRITE_TOKEN.split('_')[3].toLowerCase()}.public.blob.vercel-storage.com/${blobName}`;
+    
+    const response = await fetch(`${url}?t=${Date.now()}`, {
       cache: 'no-store'
     });
 

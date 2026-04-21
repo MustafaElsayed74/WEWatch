@@ -38,62 +38,38 @@ export default function UploadModal({ roomId, setVideoUrl }) {
     setProgress(10);
 
     try {
-      // Since Vercel Blob has strict CORS/Origin locking that causes 400 Bad Request
-      // when the token doesn't match the exact linked Vercel project, we will use a 
-      // free public temporary file host (tmpfiles.org) which is perfect for watch parties!
-      const formData = new FormData();
-      formData.append('file', file);
+      // Vercel Blob client-side upload
+      const newBlob = await upload(file.name, file, {
+        access: 'public',
+        handleUploadUrl: '/api/upload',
+        onUploadProgress: (progressEvent) => {
+          // Add basic progress tracking
+          setProgress(Math.round(progressEvent.percentage || 50));
+        },
+      });
 
-      // We use XMLHttpRequest for progress tracking
-      const xhr = new XMLHttpRequest();
-      xhr.open('POST', 'https://tmpfiles.org/api/v1/upload', true);
-
-      xhr.upload.onprogress = (event) => {
-        if (event.lengthComputable) {
-          const percentComplete = (event.loaded / event.total) * 100;
-          setProgress(Math.round(percentComplete));
-        }
-      };
-
-      xhr.onload = async function() {
-        if (xhr.status === 200) {
-          const response = JSON.parse(xhr.responseText);
-          // tmpfiles returns URL like: https://tmpfiles.org/12345/video.mp4
-          // Direct download link for streaming: https://tmpfiles.org/dl/12345/video.mp4
-          const directUrl = response.data.url.replace('tmpfiles.org/', 'tmpfiles.org/dl/');
-          
-          setVideoUrl(directUrl);
-          
-          // Update sync state
-          await fetch('/api/sync', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              roomId,
-              state: {
-                videoUrl: directUrl,
-                isPlaying: false,
-                time: 0,
-                timestamp: Date.now()
-              }
-            })
-          });
-        } else {
-          alert('Upload failed. Please try a different video.');
-        }
-        setIsUploading(false);
-      };
-
-      xhr.onerror = function() {
-        alert('Upload error. Your network might be blocking the upload.');
-        setIsUploading(false);
-      };
-
-      xhr.send(formData);
+      // Once uploaded, we set the video URL
+      setVideoUrl(newBlob.url);
+      
+      // We also update the sync state so the other person gets the video URL
+      await fetch('/api/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          roomId,
+          state: {
+            videoUrl: newBlob.url,
+            isPlaying: false,
+            time: 0,
+            timestamp: Date.now()
+          }
+        })
+      });
 
     } catch (error) {
       console.error('Error uploading file:', error);
       alert('Upload failed: ' + error.message);
+    } finally {
       setIsUploading(false);
     }
   };
