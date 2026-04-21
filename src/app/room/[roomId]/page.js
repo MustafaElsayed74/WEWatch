@@ -1,35 +1,36 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
-import { io } from 'socket.io-client';
 import UploadModal from '@/components/UploadModal';
 import VideoPlayer from '@/components/VideoPlayer';
 
 export default function RoomPage() {
   const params = useParams();
   const roomId = params.roomId;
-  const [socket, setSocket] = useState(null);
   const [videoUrl, setVideoUrl] = useState(null);
-  const [isHost, setIsHost] = useState(false);
 
   useEffect(() => {
-    // Initialize socket connection
-    const newSocket = io();
-    setSocket(newSocket);
+    // Poll for videoUrl if it's not set
+    if (videoUrl) return;
 
-    newSocket.on('connect', () => {
-      newSocket.emit('join-room', roomId);
-    });
-
-    newSocket.on('video-uploaded', (url) => {
-      setVideoUrl(url);
-    });
-
-    return () => {
-      newSocket.disconnect();
+    const checkVideo = async () => {
+      try {
+        const res = await fetch(`/api/sync?roomId=${roomId}`);
+        const data = await res.json();
+        if (data?.state?.videoUrl) {
+          setVideoUrl(data.state.videoUrl);
+        }
+      } catch (err) {
+        console.error("Failed to check room state", err);
+      }
     };
-  }, [roomId]);
+
+    checkVideo();
+    const interval = setInterval(checkVideo, 2000); // Check every 2 seconds
+
+    return () => clearInterval(interval);
+  }, [roomId, videoUrl]);
 
   return (
     <div className="flex flex-col min-h-screen p-4 md:p-8 animate-fade-in">
@@ -47,7 +48,7 @@ export default function RoomPage() {
         {!videoUrl ? (
           <UploadModal roomId={roomId} setVideoUrl={setVideoUrl} />
         ) : (
-          <VideoPlayer socket={socket} roomId={roomId} videoUrl={videoUrl} />
+          <VideoPlayer roomId={roomId} videoUrl={videoUrl} />
         )}
       </main>
     </div>

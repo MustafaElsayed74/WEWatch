@@ -2,93 +2,83 @@
 
 import { useEffect, useRef, useState } from 'react';
 
-export default function VideoPlayer({ socket, roomId, videoUrl }) {
+export default function VideoPlayer({ roomId, videoUrl }) {
   const videoRef = useRef(null);
-  const [isPlaying, setIsPlaying] = useState(false);
   const ignoreNextEvent = useRef(false);
+  const lastSyncTime = useRef(0);
+  const localState = useRef({ isPlaying: false, time: 0, timestamp: 0 });
 
   useEffect(() => {
-    if (!socket || !videoRef.current) return;
+    if (!videoRef.current) return;
 
-    // Listen for incoming socket events
-    socket.on('play', () => {
-      ignoreNextEvent.current = true;
-      videoRef.current.play().catch(e => console.error("Play failed:", e));
-      setIsPlaying(true);
-    });
+    const pollSync = async () => {
+      try {
+        const res = await fetch(`/api/sync?roomId=${roomId}`);
+        const data = await res.json();
+        
+        if (data?.state) {
+          const remoteState = data.state;
+          
+          // Only sync if the remote state is newer than our last known remote state
+          if (remoteState.timestamp > lastSyncTime.current) {
+            lastSyncTime.current = remoteState.timestamp;
+            
+            // Check if remote state differs significantly from local state
+            const timeDiff = Math.abs(videoRef.current.currentTime - remoteState.time);
+            const isPlayingDiff = !videoRef.current.paused !== remoteState.isPlaying;
 
-    socket.on('pause', () => {
-      ignoreNextEvent.current = true;
-      videoRef.current.pause();
-      setIsPlaying(false);
-    });
-
-    socket.on('seek', (time) => {
-      if (Math.abs(videoRef.current.currentTime - time) > 0.5) {
-        ignoreNextEvent.current = true;
-        videoRef.current.currentTime = time;
-      }
-    });
-
-    socket.on('sync-request', (targetSocketId) => {
-      if (videoRef.current) {
-        socket.emit('sync-response', {
-          targetSocketId,
-          state: {
-            time: videoRef.current.currentTime,
-            isPlaying: !videoRef.current.paused
+            if (timeDiff > 1.5 || isPlayingDiff) {
+              ignoreNextEvent.current = true;
+              videoRef.current.currentTime = remoteState.time;
+              
+              if (remoteState.isPlaying && videoRef.current.paused) {
+                videoRef.current.play().catch(e => console.error("Play failed:", e));
+              } else if (!remoteState.isPlaying && !videoRef.current.paused) {
+                videoRef.current.pause();
+              }
+            }
           }
-        });
-      }
-    });
-
-    socket.on('sync-update', (state) => {
-      if (videoRef.current) {
-        ignoreNextEvent.current = true;
-        videoRef.current.currentTime = state.time;
-        if (state.isPlaying) {
-          videoRef.current.play().catch(e => console.error("Play failed:", e));
         }
+      } catch (err) {
+        console.error("Poll failed", err);
       }
-    });
-
-    return () => {
-      socket.off('play');
-      socket.off('pause');
-      socket.off('seek');
-      socket.off('sync-request');
-      socket.off('sync-update');
     };
-  }, [socket]);
 
-  // Video Event Handlers (Broadcast to others)
-  const handlePlay = () => {
+    // Poll every 2 seconds
+    const interval = setInterval(pollSync, 2000);
+    return () => clearInterval(interval);
+  }, [roomId]);
+
+  const updateRemoteState = async (isPlaying, time) => {
     if (ignoreNextEvent.current) {
       ignoreNextEvent.current = false;
       return;
     }
-    socket.emit('play', roomId);
-    setIsPlaying(true);
+    
+    const newState = {
+      videoUrl,
+      isPlaying,
+      time,
+      timestamp: Date.now()
+    };
+    
+    localState.current = newState;
+    lastSyncTime.current = newState.timestamp;
+
+    try {
+      await fetch('/api/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ roomId, state: newState })
+      });
+    } catch (err) {
+      console.error("Failed to update remote state", err);
+    }
   };
 
-  const handlePause = () => {
-    if (ignoreNextEvent.current) {
-      ignoreNextEvent.current = false;
-      return;
-    }
-    socket.emit('pause', roomId);
-    setIsPlaying(false);
-  };
-
-  const handleSeek = () => {
-    if (ignoreNextEvent.current) {
-      ignoreNextEvent.current = false;
-      return;
-    }
-    if (videoRef.current) {
-      socket.emit('seek', { roomId, time: videoRef.current.currentTime });
-    }
-  };
+  const handlePlay = () => updateRemoteState(true, videoRef.current.currentTime);
+  const handlePause = () => updateRemoteState(false, videoRef.current.currentTime);
+  const handleSeek = () => updateRemoteState(!videoRef.current.paused, videoRef.current.currentTime);
 
   return (
     <div className="w-full w-full relative animate-fade-in">
@@ -105,6 +95,9 @@ export default function VideoPlayer({ socket, roomId, videoUrl }) {
         >
           Your browser does not support the video tag.
         </video>
+      </div>
+      <div className="text-center mt-4 text-xs text-secondary opacity-50">
+        Using Stateless Vercel Blob Sync (~2s delay)
       </div>
     </div>
   );

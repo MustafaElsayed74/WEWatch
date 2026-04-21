@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { upload } from '@vercel/blob/client';
 
 export default function UploadModal({ roomId, setVideoUrl }) {
   const [isDragging, setIsDragging] = useState(false);
@@ -34,43 +35,42 @@ export default function UploadModal({ roomId, setVideoUrl }) {
 
   const uploadFile = async (file) => {
     setIsUploading(true);
-    setProgress(10); // Fake progress start
-
-    const formData = new FormData();
-    formData.append('video', file);
-    formData.append('roomId', roomId);
+    setProgress(10);
 
     try {
-      const xhr = new XMLHttpRequest();
-      xhr.open('POST', '/api/upload', true);
+      // Vercel Blob client-side upload
+      const newBlob = await upload(file.name, file, {
+        access: 'public',
+        handleUploadUrl: '/api/upload',
+        onUploadProgress: (progressEvent) => {
+          // Add basic progress tracking
+          setProgress(Math.round(progressEvent.percentage || 50));
+        },
+      });
 
-      xhr.upload.onprogress = (event) => {
-        if (event.lengthComputable) {
-          const percentComplete = (event.loaded / event.total) * 100;
-          setProgress(Math.round(percentComplete));
-        }
-      };
+      // Once uploaded, we set the video URL
+      setVideoUrl(newBlob.url);
+      
+      // We also update the sync state so the other person gets the video URL
+      await fetch('/api/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          roomId,
+          state: {
+            videoUrl: newBlob.url,
+            isPlaying: false,
+            time: 0,
+            timestamp: Date.now()
+          }
+        })
+      });
 
-      xhr.onload = function() {
-        if (xhr.status === 200) {
-          const response = JSON.parse(xhr.responseText);
-          setVideoUrl(response.url);
-        } else {
-          alert('Upload failed.');
-        }
-        setIsUploading(false);
-      };
-
-      xhr.onerror = function() {
-        alert('Upload error.');
-        setIsUploading(false);
-      };
-
-      xhr.send(formData);
     } catch (error) {
       console.error('Error uploading file:', error);
+      alert('Upload failed: ' + error.message);
+    } finally {
       setIsUploading(false);
-      alert('Upload failed.');
     }
   };
 
@@ -90,10 +90,11 @@ export default function UploadModal({ roomId, setVideoUrl }) {
       >
         {isUploading ? (
           <div className="flex flex-col items-center w-full max-w-xs">
-            <div className="text-xl mb-4 text-primary animate-pulse">Uploading... {progress}%</div>
+            <div className="text-xl mb-4 text-primary animate-pulse">Uploading to Vercel... {progress}%</div>
             <div className="w-full bg-gray-800 rounded-full h-2.5 mb-4 overflow-hidden">
               <div className="bg-primary h-2.5 rounded-full transition-all duration-300" style={{ width: `${progress}%` }}></div>
             </div>
+            <p className="text-xs text-secondary mt-2">Bypassing Vercel limits via direct upload...</p>
           </div>
         ) : (
           <>
@@ -101,7 +102,7 @@ export default function UploadModal({ roomId, setVideoUrl }) {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
             </svg>
             <p className="text-lg mb-4">Drag and drop your video file here</p>
-            <span className="text-sm text-secondary mb-6">Supports MP4, WEBM</span>
+            <span className="text-sm text-secondary mb-6">Supports MP4, WEBM (No size limits!)</span>
             <input
               type="file"
               id="fileInput"
