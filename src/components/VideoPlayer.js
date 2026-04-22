@@ -7,26 +7,7 @@ export default function VideoPlayer({ roomId, videoUrl, isHost }) {
   const ignoreNextEvent = useRef(false);
   const lastSyncTimestamp = useRef(0);
   const remoteState = useRef({ isPlaying: false, time: 0, timestamp: 0 });
-  const [muted, setMuted] = useState(!isHost); // guests start muted to allow autoplay
-
-  // ---- GUEST: warm up autoplay on mount ----
-  useEffect(() => {
-    if (isHost || !videoRef.current) return;
-
-    const vid = videoRef.current;
-    // Browsers allow autoplay if muted. Start muted, then let user unmute.
-    vid.muted = true;
-    vid.play().then(() => {
-      // Autoplay succeeded muted — now try unmuting after a short delay
-      setTimeout(() => {
-        vid.muted = false;
-        setMuted(false);
-      }, 500);
-    }).catch(() => {
-      // Even muted autoplay failed — user will need to click unmute
-      console.warn('Autoplay blocked even when muted');
-    });
-  }, [isHost]);
+  const [needsPlayClick, setNeedsPlayClick] = useState(false);
 
   // ---- POLLING: fetch remote state and apply ----
   useEffect(() => {
@@ -43,27 +24,27 @@ export default function VideoPlayer({ roomId, videoUrl, isHost }) {
         lastSyncTimestamp.current = remote.timestamp;
         remoteState.current = remote;
 
+        // Host doesn't need to react to remote state — they ARE the source
+        if (isHost) return;
+
         const vid = videoRef.current;
         if (!vid) return;
 
+        // Sync time
         const timeDiff = Math.abs(vid.currentTime - remote.time);
-        const playDiff = !vid.paused !== remote.isPlaying;
-
-        if (timeDiff > 2 || playDiff) {
+        if (timeDiff > 2) {
           ignoreNextEvent.current = true;
+          vid.currentTime = remote.time;
+        }
 
-          if (timeDiff > 2) vid.currentTime = remote.time;
-
-          if (remote.isPlaying && vid.paused) {
-            // Try unmuted first, fall back to muted
-            vid.play().catch(() => {
-              vid.muted = true;
-              setMuted(true);
-              vid.play().catch(() => {});
-            });
-          } else if (!remote.isPlaying && !vid.paused) {
-            vid.pause();
-          }
+        // Sync play/pause
+        if (remote.isPlaying && vid.paused) {
+          // Show the play button overlay — guest must click it (browser requirement)
+          setNeedsPlayClick(true);
+        } else if (!remote.isPlaying && !vid.paused) {
+          ignoreNextEvent.current = true;
+          vid.pause();
+          setNeedsPlayClick(false);
         }
       } catch {}
     };
@@ -71,7 +52,7 @@ export default function VideoPlayer({ roomId, videoUrl, isHost }) {
     const id = setInterval(poll, 1500);
     poll();
     return () => clearInterval(id);
-  }, [roomId]);
+  }, [roomId, isHost]);
 
   // ---- HOST: push state to server ----
   const pushState = useCallback(async (isPlaying, time) => {
@@ -91,37 +72,26 @@ export default function VideoPlayer({ roomId, videoUrl, isHost }) {
     } catch {}
   }, [roomId, videoUrl, isHost]);
 
-  // ---- Event handlers ----
-  const onPlay = () => {
-    if (!isHost && !remoteState.current.isPlaying) {
-      videoRef.current?.pause();
-      return;
-    }
-    pushState(true, videoRef.current.currentTime);
-  };
-
-  const onPause = () => {
-    if (!isHost && remoteState.current.isPlaying) {
-      videoRef.current?.play().catch(() => {});
-      return;
-    }
-    pushState(false, videoRef.current.currentTime);
-  };
-
+  // ---- Host event handlers ----
+  const onPlay = () => pushState(true, videoRef.current.currentTime);
+  const onPause = () => pushState(false, videoRef.current.currentTime);
   const onSeeked = () => {
-    if (!isHost) {
-      videoRef.current.currentTime = remoteState.current.time;
-      return;
-    }
+    if (ignoreNextEvent.current) { ignoreNextEvent.current = false; return; }
     pushState(!videoRef.current.paused, videoRef.current.currentTime);
   };
 
-  // Guest unmute handler
-  const handleUnmute = () => {
-    if (videoRef.current) {
-      videoRef.current.muted = false;
-      setMuted(false);
-    }
+  // ---- Guest: click-to-play handler (this IS a user gesture, so it works) ----
+  const handleGuestPlay = () => {
+    const vid = videoRef.current;
+    if (!vid) return;
+    vid.currentTime = remoteState.current.time;
+    vid.play().then(() => {
+      setNeedsPlayClick(false);
+    }).catch(() => {
+      // Last resort: try muted
+      vid.muted = true;
+      vid.play().then(() => setNeedsPlayClick(false)).catch(() => {});
+    });
   };
 
   return (
@@ -134,33 +104,43 @@ export default function VideoPlayer({ roomId, videoUrl, isHost }) {
           controls={isHost}
           playsInline
           className="w-full block"
-          style={{ maxHeight: '78vh', objectFit: 'contain', pointerEvents: isHost ? 'auto' : 'none' }}
-          onPlay={onPlay}
-          onPause={onPause}
-          onSeeked={onSeeked}
+          style={{ maxHeight: '78vh', objectFit: 'contain' }}
+          onPlay={isHost ? onPlay : undefined}
+          onPause={isHost ? onPause : undefined}
+          onSeeked={isHost ? onSeeked : undefined}
         />
 
-        {/* Guest unmute banner */}
-        {!isHost && muted && (
-          <button
-            onClick={handleUnmute}
-            className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium cursor-pointer"
-            style={{
-              background: 'rgba(168,85,247,.9)',
-              color: '#fff',
-              backdropFilter: 'blur(8px)',
-              border: '1px solid rgba(255,255,255,.2)',
-              zIndex: 10,
-              pointerEvents: 'auto',
-            }}
+        {/* Guest play overlay — this is the practical solution to autoplay blocking */}
+        {!isHost && needsPlayClick && (
+          <div
+            className="absolute inset-0 flex items-center justify-center cursor-pointer"
+            style={{ background: 'rgba(0,0,0,.6)', zIndex: 10 }}
+            onClick={handleGuestPlay}
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
-              <line x1="23" y1="9" x2="17" y2="15"/>
-              <line x1="17" y1="9" x2="23" y2="15"/>
-            </svg>
-            Tap to unmute
-          </button>
+            <div className="flex flex-col items-center gap-4">
+              <div
+                className="w-20 h-20 rounded-full flex items-center justify-center"
+                style={{
+                  background: 'var(--color-primary)',
+                  boxShadow: '0 0 40px rgba(168,85,247,.5)',
+                }}
+              >
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="#fff" strokeWidth="0">
+                  <polygon points="6 3 20 12 6 21 6 3"/>
+                </svg>
+              </div>
+              <span className="text-white text-sm font-medium">Host pressed play — tap to sync</span>
+            </div>
+          </div>
+        )}
+
+        {/* Guest paused state indicator */}
+        {!isHost && !needsPlayClick && videoRef.current?.paused && (
+          <div className="absolute bottom-4 left-4 flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs"
+               style={{ background: 'rgba(0,0,0,.7)', color: 'var(--color-muted)', zIndex: 5, pointerEvents: 'none' }}>
+            <span className="w-1.5 h-1.5 rounded-full bg-yellow-500"></span>
+            Waiting for host to play
+          </div>
         )}
       </div>
 
