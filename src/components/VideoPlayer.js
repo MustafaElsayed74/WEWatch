@@ -47,7 +47,7 @@ export default function VideoPlayer({ roomId, videoUrl, isHost }) {
 
     // First poll immediately
     poll();
-    const id = setInterval(poll, 2000);
+    const id = setInterval(poll, 1000);
     return () => clearInterval(id);
   }, [isHost, primed, roomId, applyState]);
 
