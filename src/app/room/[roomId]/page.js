@@ -9,7 +9,6 @@ export default function RoomPage() {
   const params = useParams();
   const roomId = params.roomId;
   const [videoUrl, setVideoUrl] = useState(null);
-  const [hasJoined, setHasJoined] = useState(false);
   const [isHost, setIsHost] = useState(false);
   const [checking, setChecking] = useState(true);
 
@@ -17,7 +16,6 @@ export default function RoomPage() {
   useEffect(() => {
     const hostStatus = sessionStorage.getItem('weWatchHost_' + roomId) === 'true';
     setIsHost(hostStatus);
-    if (hostStatus) setHasJoined(true);
   }, [roomId]);
 
   // Poll for room state (video URL) until found
@@ -68,30 +66,10 @@ export default function RoomPage() {
       {/* Main */}
       <main className="flex-1 flex items-center justify-center p-6">
         {checking && !videoUrl ? (
-          /* Loading state */
           <div className="text-muted text-sm animate-up">Connecting to room…</div>
         ) : !videoUrl ? (
-          /* No video yet — show upload */
           <UploadModal roomId={roomId} setVideoUrl={setVideoUrl} />
-        ) : !hasJoined ? (
-          /* Guest join screen */
-          <div className="glass w-full max-w-sm p-10 text-center animate-up">
-            <div className="w-16 h-16 mx-auto rounded-full flex items-center justify-center mb-6"
-                 style={{ background: 'rgba(168,85,247,.1)', border: '1px solid rgba(168,85,247,.2)' }}>
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="var(--color-primary)" strokeWidth="0">
-                <polygon points="5 3 19 12 5 21 5 3"/>
-              </svg>
-            </div>
-            <h2 className="text-2xl font-bold text-white mb-2">Ready to Watch?</h2>
-            <p className="text-muted text-sm mb-8 leading-relaxed">
-              The host controls playback. Hit play when you&apos;re ready.
-            </p>
-            <button className="btn btn-primary w-full" onClick={() => setHasJoined(true)}>
-              Join Session
-            </button>
-          </div>
         ) : (
-          /* Video player */
           <div className="w-full max-w-5xl animate-up">
             <VideoPlayer roomId={roomId} videoUrl={videoUrl} isHost={isHost} />
           </div>
