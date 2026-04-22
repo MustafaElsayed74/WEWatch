@@ -1,111 +1,65 @@
 'use client';
 
 import { useEffect, useRef, useCallback, useState } from 'react';
+import PusherClient from 'pusher-js';
 
 export default function VideoPlayer({ roomId, videoUrl, isHost }) {
   const videoRef = useRef(null);
-  const ignoreNextEvent = useRef(false);
   const lastSyncTimestamp = useRef(0);
   const remoteState = useRef({ isPlaying: false, time: 0, timestamp: 0 });
-  const [primed, setPrimed] = useState(isHost); // host is always primed
-  const pollRef = useRef(null);
+  const [primed, setPrimed] = useState(isHost);
+  const pusherRef = useRef(null);
 
-  // ---- POLLING (only starts after guest is primed) ----
-  const startPolling = useCallback(() => {
-    if (pollRef.current) return; // already polling
-
-    const poll = async () => {
-      try {
-        const res = await fetch(`/api/sync?roomId=${roomId}`);
-        const data = await res.json();
-        if (!data?.state) return;
-
-        const remote = data.state;
-        if (remote.timestamp <= lastSyncTimestamp.current) return;
-        lastSyncTimestamp.current = remote.timestamp;
-        remoteState.current = remote;
-
-        if (isHost) return; // host is the source of truth
-
-        const vid = videoRef.current;
-        if (!vid) return;
-
-        // Compensate for time elapsed since host pushed state
-        const elapsed = (Date.now() - remote.timestamp) / 1000;
-        const targetTime = remote.isPlaying ? remote.time + elapsed : remote.time;
-
-        // Sync time if drift > 2s
-        const drift = Math.abs(vid.currentTime - targetTime);
-        if (drift > 2) {
-          vid.currentTime = targetTime;
-        }
-
-        // Sync play/pause
-        if (remote.isPlaying && vid.paused) {
-          vid.play().catch(() => {});
-        } else if (!remote.isPlaying && !vid.paused) {
-          vid.pause();
-        }
-      } catch {}
-    };
-
-    pollRef.current = setInterval(poll, 2000);
-    poll(); // immediate first poll
-  }, [roomId, isHost]);
-
-  // Clean up polling on unmount
+  // ---- PUSHER: real-time sync for guests (replaces polling) ----
   useEffect(() => {
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, []);
+    if (isHost || !primed) return;
 
-  // Host starts polling immediately
-  useEffect(() => {
-    if (isHost) startPolling();
-  }, [isHost, startPolling]);
+    const pusher = new PusherClient(process.env.NEXT_PUBLIC_PUSHER_KEY, {
+      cluster: process.env.NEXT_PUBLIC_PUSHER_CLUSTER,
+    });
+    pusherRef.current = pusher;
 
-  // ---- GUEST PRIMER: one real click to unlock autoplay for the session ----
-  const handlePrimer = async () => {
-    const vid = videoRef.current;
-    if (!vid) return;
+    const channel = pusher.subscribe(`room-${roomId}`);
 
-    try {
-      // Fetch current state inside the click handler
-      const res = await fetch(`/api/sync?roomId=${roomId}`);
-      const data = await res.json();
+    channel.bind('sync', (state) => {
+      const vid = videoRef.current;
+      if (!vid) return;
 
-      if (data?.state) {
-        const s = data.state;
-        remoteState.current = s;
-        lastSyncTimestamp.current = s.timestamp;
+      remoteState.current = state;
 
-        // Calculate where the video should be right now
-        const elapsed = (Date.now() - s.timestamp) / 1000;
-        const targetTime = s.isPlaying ? s.time + elapsed : s.time;
+      // Compensate for network delay
+      const elapsed = state.isPlaying ? (Date.now() - state.timestamp) / 1000 : 0;
+      const targetTime = state.time + elapsed;
+
+      // Sync time if drift > 1.5s
+      if (Math.abs(vid.currentTime - targetTime) > 1.5) {
         vid.currentTime = targetTime;
-
-        if (s.isPlaying) {
-          // This play() is inside a click handler → browser trusts it
-          await vid.play().catch(() => {});
-        }
       }
-    } catch {}
 
-    // Mark as primed and start polling
-    setPrimed(true);
-    startPolling();
-  };
+      // Sync play/pause
+      if (state.isPlaying && vid.paused) {
+        vid.play().catch(() => {});
+      } else if (!state.isPlaying && !vid.paused) {
+        vid.pause();
+      }
+    });
 
-  // ---- HOST: push state to server ----
+    return () => {
+      channel.unbind_all();
+      pusher.unsubscribe(`room-${roomId}`);
+      pusher.disconnect();
+    };
+  }, [isHost, primed, roomId]);
+
+  // ---- HOST: push state to server (Pusher broadcasts to all guests) ----
   const pushState = useCallback(async (isPlaying, time) => {
     if (!isHost) return;
-    if (ignoreNextEvent.current) { ignoreNextEvent.current = false; return; }
 
     const state = { videoUrl, isPlaying, time, timestamp: Date.now() };
     remoteState.current = state;
-    lastSyncTimestamp.current = state.timestamp;
 
     try {
-      await fetch('/api/sync', {
+      await fetch('/api/pusher', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ roomId, state }),
@@ -116,15 +70,34 @@ export default function VideoPlayer({ roomId, videoUrl, isHost }) {
   // ---- Host event handlers ----
   const onPlay = () => pushState(true, videoRef.current.currentTime);
   const onPause = () => pushState(false, videoRef.current.currentTime);
-  const onSeeked = () => {
-    if (ignoreNextEvent.current) { ignoreNextEvent.current = false; return; }
-    pushState(!videoRef.current.paused, videoRef.current.currentTime);
+  const onSeeked = () => pushState(!videoRef.current.paused, videoRef.current.currentTime);
+
+  // ---- Guest primer: one click to unlock autoplay ----
+  const handlePrimer = async () => {
+    const vid = videoRef.current;
+    if (!vid) return;
+
+    try {
+      // Fetch current state from Redis (for late joiners)
+      const res = await fetch(`/api/sync?roomId=${roomId}`);
+      const data = await res.json();
+
+      if (data?.state) {
+        const s = data.state;
+        remoteState.current = s;
+        const elapsed = s.isPlaying ? (Date.now() - s.timestamp) / 1000 : 0;
+        vid.currentTime = s.time + elapsed;
+        if (s.isPlaying) await vid.play().catch(() => {});
+      }
+    } catch {}
+
+    setPrimed(true); // starts Pusher subscription via useEffect
   };
 
   return (
     <div className="w-full">
-      {/* Ambient glow behind video */}
       <div className="relative">
+        {/* Ambient glow */}
         <div className="absolute -inset-4 rounded-3xl opacity-20 blur-2xl -z-10 pointer-events-none"
              style={{ background: 'linear-gradient(135deg, var(--color-primary), transparent 60%)' }} />
 
@@ -149,7 +122,6 @@ export default function VideoPlayer({ roomId, videoUrl, isHost }) {
               onClick={handlePrimer}
             >
               <div className="flex flex-col items-center gap-6">
-                {/* Pulsing play button */}
                 <div className="relative">
                   <div className="w-24 h-24 rounded-full flex items-center justify-center relative z-10"
                        style={{ background: 'linear-gradient(135deg, var(--color-primary), var(--color-primary-dark))', boxShadow: '0 8px 40px rgba(139,92,246,.4)' }}>
@@ -157,13 +129,12 @@ export default function VideoPlayer({ roomId, videoUrl, isHost }) {
                       <polygon points="7 4 19 12 7 20 7 4"/>
                     </svg>
                   </div>
-                  {/* Pulse ring */}
                   <div className="absolute inset-0 rounded-full animate-ping opacity-20"
                        style={{ background: 'var(--color-primary)' }} />
                 </div>
                 <div className="text-center">
                   <p className="text-white text-base font-semibold mb-1">Click to join the room</p>
-                  <p className="text-sm text-muted">You&apos;ll sync with the host automatically</p>
+                  <p className="text-sm text-muted">You&apos;ll sync with the host instantly</p>
                 </div>
               </div>
             </div>
@@ -176,7 +147,7 @@ export default function VideoPlayer({ roomId, videoUrl, isHost }) {
         <span className="w-1.5 h-1.5 rounded-full"
               style={{ background: isHost ? 'var(--color-success)' : primed ? 'var(--color-success)' : 'var(--color-muted)', animation: primed || isHost ? 'pulse 2s ease-in-out infinite' : 'none' }}></span>
         <span className="text-[11px] font-medium" style={{ color: isHost || primed ? '#94a3b8' : 'var(--color-muted)' }}>
-          {isHost ? 'You control playback' : primed ? 'Synced with host' : 'Tap to connect'}
+          {isHost ? 'You control playback' : primed ? 'Live — synced with host' : 'Tap to connect'}
         </span>
       </div>
     </div>

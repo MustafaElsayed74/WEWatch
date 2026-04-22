@@ -1,9 +1,10 @@
+import { Redis } from '@upstash/redis';
 import { NextResponse } from 'next/server';
 
-// Hardcoded to avoid env var override issues
-// (.env.local has old private token, Vercel dashboard may also have stale value)
-const TOKEN = 'vercel_blob_rw_KnYfyYY3j7bNMGjA_CyUm2yPWiKl1SWzmp7iJGyV7SQ8hIO';
-const STORE_URL = 'https://knyfyyy3j7bnmgja.public.blob.vercel-storage.com';
+const redis = new Redis({
+  url: process.env.KV_REST_API_URL,
+  token: process.env.KV_REST_API_TOKEN,
+});
 
 export async function POST(request) {
   try {
@@ -12,23 +13,8 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Missing roomId or state' }, { status: 400 });
     }
 
-    const pathname = `rooms/${roomId}.json`;
-    const res = await fetch(`https://blob.vercel-storage.com/${pathname}`, {
-      method: 'PUT',
-      headers: {
-        'Authorization': `Bearer ${TOKEN}`,
-        'x-api-version': '7',
-        'x-content-type': 'application/json',
-        'x-add-random-suffix': '0',
-      },
-      body: JSON.stringify(state),
-    });
-
-    if (!res.ok) {
-      const text = await res.text();
-      console.error('Blob API error:', res.status, text);
-      return NextResponse.json({ error: text }, { status: res.status });
-    }
+    // Store state in Redis with 6-hour TTL (auto-cleanup)
+    await redis.set(`room:${roomId}`, JSON.stringify(state), { ex: 21600 });
 
     return NextResponse.json({ success: true });
   } catch (error) {
@@ -45,16 +31,13 @@ export async function GET(request) {
   }
 
   try {
-    const url = `${STORE_URL}/rooms/${roomId}.json`;
-    const res = await fetch(`${url}?t=${Date.now()}`, { cache: 'no-store' });
+    const raw = await redis.get(`room:${roomId}`);
+    if (!raw) return NextResponse.json({ state: null });
 
-    if (!res.ok) {
-      return NextResponse.json({ state: null });
-    }
-
-    const state = await res.json();
+    const state = typeof raw === 'string' ? JSON.parse(raw) : raw;
     return NextResponse.json({ state });
   } catch (error) {
+    console.error('Sync GET error:', error);
     return NextResponse.json({ state: null });
   }
 }
