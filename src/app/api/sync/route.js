@@ -1,26 +1,25 @@
-import { put, head } from '@vercel/blob';
+import { put, list } from '@vercel/blob';
 import { NextResponse } from 'next/server';
+
+const TOKEN = process.env.BLOB_READ_WRITE_TOKEN;
 
 export async function POST(request) {
   try {
     const { roomId, state } = await request.json();
-
     if (!roomId || !state) {
       return NextResponse.json({ error: 'Missing roomId or state' }, { status: 400 });
     }
 
-    // Save the state as a JSON file in Vercel Blob
-    // addRandomSuffix: false means it will overwrite the file, effectively keeping our state updated
-    const blobName = `rooms/${roomId}.json`;
-    const blob = await put(blobName, JSON.stringify(state), {
+    const blob = await put(`rooms/${roomId}.json`, JSON.stringify(state), {
       access: 'public',
       addRandomSuffix: false,
       contentType: 'application/json',
-      token: process.env.BLOB_READ_WRITE_TOKEN,
+      token: TOKEN,
     });
 
     return NextResponse.json({ success: true, url: blob.url });
   } catch (error) {
+    console.error('Sync POST error:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
@@ -28,29 +27,29 @@ export async function POST(request) {
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
   const roomId = searchParams.get('roomId');
-
   if (!roomId) {
     return NextResponse.json({ error: 'Missing roomId' }, { status: 400 });
   }
 
   try {
-    const blobName = `rooms/${roomId}.json`;
-    
-    // Instead of using list/head which can be slow or cached incorrectly,
-    // we fetch the Blob URL directly. However, we add a timestamp to bypass edge cache!
-    const url = `https://${process.env.BLOB_READ_WRITE_TOKEN.split('_')[3].toLowerCase()}.public.blob.vercel-storage.com/${blobName}`;
-    
-    const response = await fetch(`${url}?t=${Date.now()}`, {
-      cache: 'no-store'
-    });
+    // Use list() to find the blob by prefix — most reliable approach
+    const { blobs } = await list({ prefix: `rooms/${roomId}.json`, token: TOKEN });
 
-    if (!response.ok) {
+    if (!blobs || blobs.length === 0) {
       return NextResponse.json({ state: null });
     }
 
-    const state = await response.json();
+    // Fetch the blob content with cache-busting
+    const blobUrl = blobs[0].url;
+    const res = await fetch(`${blobUrl}?t=${Date.now()}`, { cache: 'no-store' });
+    if (!res.ok) {
+      return NextResponse.json({ state: null });
+    }
+
+    const state = await res.json();
     return NextResponse.json({ state });
   } catch (error) {
+    console.error('Sync GET error:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
