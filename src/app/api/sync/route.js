@@ -2,10 +2,9 @@ import { put } from '@vercel/blob';
 import { NextResponse } from 'next/server';
 
 const TOKEN = process.env.BLOB_READ_WRITE_TOKEN;
-// kvdb.io bucket for real-time sync state (tiny JSON, <1KB)
-// Vercel Blob is great for large files but its list()/head() SDK has bugs
-// kvdb.io is instant, no auth, no CORS, perfect for real-time state
-const KVDB = 'JihU9zcJHZNzyUAdw2ifg4';
+// We know from testing that this token's store URL is:
+// https://knyfyyy3j7bnmgja.public.blob.vercel-storage.com/
+const STORE_URL = 'https://knyfyyy3j7bnmgja.public.blob.vercel-storage.com';
 
 export async function POST(request) {
   try {
@@ -14,11 +13,12 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Missing roomId or state' }, { status: 400 });
     }
 
-    // Save to kvdb.io (instant, reliable)
-    await fetch(`https://kvdb.io/${KVDB}/${roomId}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(state),
+    // put() works perfectly — tested and confirmed
+    await put(`rooms/${roomId}.json`, JSON.stringify(state), {
+      access: 'public',
+      addRandomSuffix: false,
+      contentType: 'application/json',
+      token: TOKEN,
     });
 
     return NextResponse.json({ success: true });
@@ -36,18 +36,16 @@ export async function GET(request) {
   }
 
   try {
-    const res = await fetch(`https://kvdb.io/${KVDB}/${roomId}`, { cache: 'no-store' });
+    // Directly fetch the blob using the known store URL
+    // This avoids the buggy list()/head() SDK methods entirely
+    const url = `${STORE_URL}/rooms/${roomId}.json`;
+    const res = await fetch(`${url}?t=${Date.now()}`, { cache: 'no-store' });
 
     if (!res.ok) {
       return NextResponse.json({ state: null });
     }
 
-    const text = await res.text();
-    if (!text || text.trim() === '') {
-      return NextResponse.json({ state: null });
-    }
-
-    const state = JSON.parse(text);
+    const state = await res.json();
     return NextResponse.json({ state });
   } catch (error) {
     console.error('Sync GET error:', error);
