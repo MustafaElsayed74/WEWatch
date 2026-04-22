@@ -1,4 +1,3 @@
-import { put, del } from '@vercel/blob';
 import { NextResponse } from 'next/server';
 
 const TOKEN = process.env.BLOB_READ_WRITE_TOKEN;
@@ -11,20 +10,25 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Missing roomId or state' }, { status: 400 });
     }
 
+    // Bypass the @vercel/blob SDK entirely — it has overwrite bugs.
+    // Use the Vercel Blob REST API directly via fetch().
     const pathname = `rooms/${roomId}.json`;
-
-    // Delete first to avoid SDK overwrite bug (addRandomSuffix: false chokes on existing blobs)
-    try {
-      await del(`${STORE_URL}/${pathname}`, { token: TOKEN });
-    } catch (_) {} // ignore if file doesn't exist yet
-
-    // Write fresh
-    await put(pathname, JSON.stringify(state), {
-      access: 'public',
-      addRandomSuffix: false,
-      contentType: 'application/json',
-      token: TOKEN,
+    const res = await fetch(`https://blob.vercel-storage.com/${pathname}`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${TOKEN}`,
+        'x-api-version': '7',
+        'x-content-type': 'application/json',
+        'x-add-random-suffix': '0',
+      },
+      body: JSON.stringify(state),
     });
+
+    if (!res.ok) {
+      const text = await res.text();
+      console.error('Blob REST API error:', res.status, text);
+      return NextResponse.json({ error: text }, { status: 500 });
+    }
 
     return NextResponse.json({ success: true });
   } catch (error) {
