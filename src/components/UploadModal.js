@@ -57,17 +57,20 @@ export default function UploadModal({ roomId, setVideoUrl }) {
       // 3. Mark as host + save state
       sessionStorage.setItem('weWatchHost_' + roomId, 'true');
 
+      // Use our streaming proxy URL (proper headers, no CORS, supports seeking)
+      const videoUrl = `/api/stream?key=${encodeURIComponent(key)}`;
+
       await fetch('/api/pusher', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           roomId,
-          state: { videoUrl: streamUrl, videoKey: key, isPlaying: false, time: 0, timestamp: Date.now() },
+          state: { videoUrl, videoKey: key, isPlaying: false, time: 0, timestamp: Date.now() },
         }),
       });
 
       setProgress(100);
-      setVideoUrl(streamUrl);
+      setVideoUrl(videoUrl);
     } catch (err) {
       console.error('Upload error:', err);
       alert('Upload failed: ' + err.message);
