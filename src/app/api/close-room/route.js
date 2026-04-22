@@ -1,10 +1,20 @@
-import { del } from '@vercel/blob';
+import { S3Client, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { Redis } from '@upstash/redis';
 import { NextResponse } from 'next/server';
 
 const redis = new Redis({
   url: process.env.KV_REST_API_URL,
   token: process.env.KV_REST_API_TOKEN,
+});
+
+const s3 = new S3Client({
+  region: 'us-east-005',
+  endpoint: 'https://s3.us-east-005.backblazeb2.com',
+  credentials: {
+    accessKeyId: '8aa28ea086c7',
+    secretAccessKey: '005940491079834ebfcf68da557217476d8c9fb2c4',
+  },
+  forcePathStyle: true,
 });
 
 export async function POST(request) {
@@ -14,16 +24,16 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Missing roomId' }, { status: 400 });
     }
 
-    // Get the room state to find the video URL
+    // Get room state to find the video key
     const raw = await redis.get(`room:${roomId}`);
     const state = typeof raw === 'string' ? JSON.parse(raw) : raw;
 
-    // Delete the video from Vercel Blob
-    if (state?.videoUrl) {
+    // Delete video from B2
+    if (state?.videoKey) {
       try {
-        await del(state.videoUrl, { token: process.env.BLOB_READ_WRITE_TOKEN });
+        await s3.send(new DeleteObjectCommand({ Bucket: 'Wewatch', Key: state.videoKey }));
       } catch (e) {
-        console.error('Failed to delete blob:', e);
+        console.error('Failed to delete from B2:', e);
       }
     }
 
