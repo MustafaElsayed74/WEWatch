@@ -1,14 +1,34 @@
 'use client';
 
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useState } from 'react';
 
 export default function VideoPlayer({ roomId, videoUrl, isHost }) {
   const videoRef = useRef(null);
   const ignoreNextEvent = useRef(false);
   const lastSyncTimestamp = useRef(0);
   const remoteState = useRef({ isPlaying: false, time: 0, timestamp: 0 });
+  const [muted, setMuted] = useState(!isHost); // guests start muted to allow autoplay
 
-  // ---- POLLING: fetch remote state and apply to guest ----
+  // ---- GUEST: warm up autoplay on mount ----
+  useEffect(() => {
+    if (isHost || !videoRef.current) return;
+
+    const vid = videoRef.current;
+    // Browsers allow autoplay if muted. Start muted, then let user unmute.
+    vid.muted = true;
+    vid.play().then(() => {
+      // Autoplay succeeded muted — now try unmuting after a short delay
+      setTimeout(() => {
+        vid.muted = false;
+        setMuted(false);
+      }, 500);
+    }).catch(() => {
+      // Even muted autoplay failed — user will need to click unmute
+      console.warn('Autoplay blocked even when muted');
+    });
+  }, [isHost]);
+
+  // ---- POLLING: fetch remote state and apply ----
   useEffect(() => {
     if (!videoRef.current) return;
 
@@ -19,7 +39,6 @@ export default function VideoPlayer({ roomId, videoUrl, isHost }) {
         if (!data?.state) return;
 
         const remote = data.state;
-        // Only act on newer state
         if (remote.timestamp <= lastSyncTimestamp.current) return;
         lastSyncTimestamp.current = remote.timestamp;
         remoteState.current = remote;
@@ -36,7 +55,12 @@ export default function VideoPlayer({ roomId, videoUrl, isHost }) {
           if (timeDiff > 2) vid.currentTime = remote.time;
 
           if (remote.isPlaying && vid.paused) {
-            vid.play().catch(() => {});
+            // Try unmuted first, fall back to muted
+            vid.play().catch(() => {
+              vid.muted = true;
+              setMuted(true);
+              vid.play().catch(() => {});
+            });
           } else if (!remote.isPlaying && !vid.paused) {
             vid.pause();
           }
@@ -45,7 +69,7 @@ export default function VideoPlayer({ roomId, videoUrl, isHost }) {
     };
 
     const id = setInterval(poll, 1500);
-    poll(); // initial check
+    poll();
     return () => clearInterval(id);
   }, [roomId]);
 
@@ -68,7 +92,7 @@ export default function VideoPlayer({ roomId, videoUrl, isHost }) {
   }, [roomId, videoUrl, isHost]);
 
   // ---- Event handlers ----
-  const onPlay  = () => {
+  const onPlay = () => {
     if (!isHost && !remoteState.current.isPlaying) {
       videoRef.current?.pause();
       return;
@@ -92,10 +116,18 @@ export default function VideoPlayer({ roomId, videoUrl, isHost }) {
     pushState(!videoRef.current.paused, videoRef.current.currentTime);
   };
 
+  // Guest unmute handler
+  const handleUnmute = () => {
+    if (videoRef.current) {
+      videoRef.current.muted = false;
+      setMuted(false);
+    }
+  };
+
   return (
     <div className="w-full">
       {/* Video container */}
-      <div className="glass overflow-hidden" style={{ padding: 0, borderRadius: 16, background: '#000' }}>
+      <div className="glass overflow-hidden relative" style={{ padding: 0, borderRadius: 16, background: '#000' }}>
         <video
           ref={videoRef}
           src={videoUrl}
@@ -107,6 +139,29 @@ export default function VideoPlayer({ roomId, videoUrl, isHost }) {
           onPause={onPause}
           onSeeked={onSeeked}
         />
+
+        {/* Guest unmute banner */}
+        {!isHost && muted && (
+          <button
+            onClick={handleUnmute}
+            className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium cursor-pointer"
+            style={{
+              background: 'rgba(168,85,247,.9)',
+              color: '#fff',
+              backdropFilter: 'blur(8px)',
+              border: '1px solid rgba(255,255,255,.2)',
+              zIndex: 10,
+              pointerEvents: 'auto',
+            }}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+              <line x1="23" y1="9" x2="17" y2="15"/>
+              <line x1="17" y1="9" x2="23" y2="15"/>
+            </svg>
+            Tap to unmute
+          </button>
+        )}
       </div>
 
       {/* Status bar */}
