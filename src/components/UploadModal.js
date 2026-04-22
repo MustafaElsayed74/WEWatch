@@ -49,6 +49,7 @@ export default function UploadModal({ roomId, setVideoUrl }) {
       });
 
       // Once uploaded, we set the video URL
+      sessionStorage.setItem('weWatchHost_' + roomId, 'true');
       setVideoUrl(newBlob.url);
       
       // We also update the sync state so the other person gets the video URL
