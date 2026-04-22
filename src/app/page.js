@@ -22,35 +22,42 @@ export default function Home() {
 
   return (
     <main className="flex flex-col items-center justify-center min-h-screen p-4 animate-fade-in">
-      <div className="glass-panel w-full max-w-md text-center">
-        <h1 className="mb-4" style={{ fontSize: '2.5rem', background: 'linear-gradient(to right, #fff, #94a3b8)', WebkitBackgroundClip: 'text', color: 'transparent' }}>
+      <div className="absolute top-8 left-8 text-2xl font-bold tracking-wider text-gradient-primary">WW</div>
+      
+      <div className="glass-panel w-full max-w-md text-center p-10 animate-slide-up relative">
+        {/* Glow effect behind the panel */}
+        <div className="absolute -inset-1 bg-gradient-to-r from-primary to-secondary blur-lg opacity-20 -z-10 rounded-[30px]"></div>
+
+        <h1 className="text-5xl font-extrabold mb-4 text-gradient">
           WeWatch
         </h1>
-        <p className="text-secondary mb-8">
-          Watch movies in perfect sync with your friends, no matter where they are.
+        <p className="text-secondary mb-10 text-sm tracking-wide">
+          SYNCHRONIZED CINEMA EXPERIENCES
         </p>
 
-        <div className="flex flex-col gap-4">
-          <button onClick={createRoom} className="btn btn-primary w-full">
-            Create a New Room
+        <div className="flex flex-col gap-6">
+          <button onClick={createRoom} className="btn btn-primary w-full group">
+            <span className="relative z-10">Create Premium Room</span>
+            <div className="absolute inset-0 bg-gradient-to-r from-secondary to-primary opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
           </button>
           
-          <div style={{ position: 'relative', margin: '1rem 0' }}>
-            <hr style={{ border: 'none', borderTop: '1px solid var(--glass-border)' }} />
-            <span style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', background: 'var(--bg-color)', padding: '0 10px', color: 'var(--text-secondary)', fontSize: '0.875rem' }}>or</span>
+          <div className="relative my-2">
+            <hr className="border-t border-glass-border" />
+            <span className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-[#12121A] px-4 text-xs text-secondary font-mono tracking-widest uppercase rounded-full border border-glass-border">or join existing</span>
           </div>
 
-          <form onSubmit={joinRoom} className="flex flex-col gap-4">
+          <form onSubmit={joinRoom} className="flex flex-col gap-4 relative">
             <input 
               type="text" 
-              placeholder="Enter Room ID" 
-              className="input-field"
+              placeholder="ENTER ROOM ID" 
+              className="input-premium text-center tracking-[0.2em] font-bold placeholder-gray-600 uppercase"
               value={joinRoomId}
-              onChange={(e) => setJoinRoomId(e.target.value)}
+              onChange={(e) => setJoinRoomId(e.target.value.toUpperCase())}
+              maxLength={6}
               required
             />
             <button type="submit" className="btn btn-secondary w-full">
-              Join Room
+              Access Room
             </button>
           </form>
         </div>
