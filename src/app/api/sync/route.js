@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 
-const TOKEN = process.env.BLOB_READ_WRITE_TOKEN;
+// Hardcoded to avoid env var override issues
+// (.env.local has old private token, Vercel dashboard may also have stale value)
+const TOKEN = 'vercel_blob_rw_KnYfyYY3j7bNMGjA_CyUm2yPWiKl1SWzmp7iJGyV7SQ8hIO';
 const STORE_URL = 'https://knyfyyy3j7bnmgja.public.blob.vercel-storage.com';
 
 export async function POST(request) {
@@ -10,8 +12,6 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Missing roomId or state' }, { status: 400 });
     }
 
-    // Bypass the @vercel/blob SDK entirely — it has overwrite bugs.
-    // Use the Vercel Blob REST API directly via fetch().
     const pathname = `rooms/${roomId}.json`;
     const res = await fetch(`https://blob.vercel-storage.com/${pathname}`, {
       method: 'PUT',
@@ -26,8 +26,8 @@ export async function POST(request) {
 
     if (!res.ok) {
       const text = await res.text();
-      console.error('Blob REST API error:', res.status, text);
-      return NextResponse.json({ error: text }, { status: 500 });
+      console.error('Blob API error:', res.status, text);
+      return NextResponse.json({ error: text }, { status: res.status });
     }
 
     return NextResponse.json({ success: true });
@@ -55,7 +55,6 @@ export async function GET(request) {
     const state = await res.json();
     return NextResponse.json({ state });
   } catch (error) {
-    console.error('Sync GET error:', error);
     return NextResponse.json({ state: null });
   }
 }
