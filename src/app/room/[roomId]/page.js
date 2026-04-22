@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import UploadModal from '@/components/UploadModal';
 import VideoPlayer from '@/components/VideoPlayer';
@@ -12,10 +12,19 @@ export default function RoomPage() {
   const [isHost, setIsHost] = useState(false);
   const [checking, setChecking] = useState(true);
 
+  // Re-check host status whenever videoUrl changes (upload sets sessionStorage THEN videoUrl)
   useEffect(() => {
     setIsHost(sessionStorage.getItem('weWatchHost_' + roomId) === 'true');
+  }, [roomId, videoUrl]);
+
+  // Wrapper that also marks host before setting video URL
+  const handleVideoUrl = useCallback((url) => {
+    // Re-read host flag right before rendering VideoPlayer
+    setIsHost(sessionStorage.getItem('weWatchHost_' + roomId) === 'true');
+    setVideoUrl(url);
   }, [roomId]);
 
+  // Poll for room state (video URL) until found
   useEffect(() => {
     if (videoUrl) return;
     const check = async () => {
@@ -45,14 +54,12 @@ export default function RoomPage() {
         </div>
 
         <div className="flex items-center gap-3">
-          {/* Room badge */}
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl"
                style={{ background: 'rgba(0,0,0,.3)', border: '1px solid rgba(255,255,255,.04)' }}>
             <span className="text-[10px] text-muted font-mono uppercase tracking-widest">Room</span>
             <code className="text-xs font-mono tracking-[.15em] text-white font-semibold">{roomId}</code>
           </div>
 
-          {/* Host badge */}
           {isHost && (
             <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[11px] font-bold uppercase tracking-wider"
                  style={{ background: 'rgba(139,92,246,.12)', color: 'var(--color-primary-light)', border: '1px solid rgba(139,92,246,.15)' }}>
@@ -71,7 +78,7 @@ export default function RoomPage() {
             <span className="text-muted text-xs font-mono uppercase tracking-widest">Connecting</span>
           </div>
         ) : !videoUrl ? (
-          <UploadModal roomId={roomId} setVideoUrl={setVideoUrl} />
+          <UploadModal roomId={roomId} setVideoUrl={handleVideoUrl} />
         ) : (
           <div className="w-full max-w-5xl animate-up">
             <VideoPlayer roomId={roomId} videoUrl={videoUrl} isHost={isHost} />
