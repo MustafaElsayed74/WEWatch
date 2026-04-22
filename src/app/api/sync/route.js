@@ -1,9 +1,7 @@
-import { put } from '@vercel/blob';
+import { put, del } from '@vercel/blob';
 import { NextResponse } from 'next/server';
 
 const TOKEN = process.env.BLOB_READ_WRITE_TOKEN;
-// We know from testing that this token's store URL is:
-// https://knyfyyy3j7bnmgja.public.blob.vercel-storage.com/
 const STORE_URL = 'https://knyfyyy3j7bnmgja.public.blob.vercel-storage.com';
 
 export async function POST(request) {
@@ -13,8 +11,15 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Missing roomId or state' }, { status: 400 });
     }
 
-    // put() works perfectly — tested and confirmed
-    await put(`rooms/${roomId}.json`, JSON.stringify(state), {
+    const pathname = `rooms/${roomId}.json`;
+
+    // Delete first to avoid SDK overwrite bug (addRandomSuffix: false chokes on existing blobs)
+    try {
+      await del(`${STORE_URL}/${pathname}`, { token: TOKEN });
+    } catch (_) {} // ignore if file doesn't exist yet
+
+    // Write fresh
+    await put(pathname, JSON.stringify(state), {
       access: 'public',
       addRandomSuffix: false,
       contentType: 'application/json',
@@ -36,8 +41,6 @@ export async function GET(request) {
   }
 
   try {
-    // Directly fetch the blob using the known store URL
-    // This avoids the buggy list()/head() SDK methods entirely
     const url = `${STORE_URL}/rooms/${roomId}.json`;
     const res = await fetch(`${url}?t=${Date.now()}`, { cache: 'no-store' });
 
