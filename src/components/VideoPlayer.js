@@ -19,10 +19,9 @@ export default function VideoPlayer({ roomId, videoUrl, isHost }) {
     lastSyncTimestamp.current = state.timestamp;
     remoteState.current = state;
 
-    const elapsed = state.isPlaying ? (Date.now() - state.timestamp) / 1000 : 0;
-    const targetTime = state.time + elapsed;
+    const targetTime = state.time;
 
-    if (Math.abs(vid.currentTime - targetTime) > 1.5) {
+    if (Math.abs(vid.currentTime - targetTime) > 2) {
       vid.currentTime = targetTime;
     }
 
@@ -103,8 +102,7 @@ export default function VideoPlayer({ roomId, videoUrl, isHost }) {
         const s = data.state;
         remoteState.current = s;
         lastSyncTimestamp.current = s.timestamp;
-        const elapsed = s.isPlaying ? (Date.now() - s.timestamp) / 1000 : 0;
-        vid.currentTime = s.time + elapsed;
+        vid.currentTime = s.time;
         if (s.isPlaying) await vid.play().catch(() => {});
       }
     } catch {}
