@@ -2,8 +2,8 @@ import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } fro
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { NextResponse } from 'next/server';
 
-const B2_KEY_ID = '8aa28ea086c7';
-const B2_APP_KEY = '005940491079834ebfcf68da557217476d8c9fb2c4';
+const B2_KEY_ID = '0058aa28ea086c70000000001';
+const B2_APP_KEY = 'K005PCMtYa0FzXu3otF5+eVl+YZ+qDE';
 const B2_BUCKET = 'Wewatch';
 const B2_REGION = 'us-east-005';
 const B2_ENDPOINT = `https://s3.${B2_REGION}.backblazeb2.com`;
