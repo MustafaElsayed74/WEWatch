@@ -8,13 +8,13 @@ export default function VideoPlayer({ roomId, videoUrl, isHost }) {
   const lastSyncTimestamp = useRef(0);
   const remoteState = useRef({ isPlaying: false, time: 0, timestamp: 0 });
   const [primed, setPrimed] = useState(isHost);
-  const pollRef = useRef(null);
 
   // ---- Apply remote state to guest video ----
   const applyState = useCallback((state) => {
     const vid = videoRef.current;
     if (!vid || isHost) return;
 
+    // Skip if we already applied this or a newer state
     if (state.timestamp <= lastSyncTimestamp.current) return;
     lastSyncTimestamp.current = state.timestamp;
     remoteState.current = state;
@@ -33,31 +33,10 @@ export default function VideoPlayer({ roomId, videoUrl, isHost }) {
     }
   }, [isHost]);
 
-  // ---- PUSHER: real-time sync for guests ----
+  // ---- ALWAYS run polling as baseline (2s) ----
   useEffect(() => {
     if (isHost || !primed) return;
 
-    const key = process.env.NEXT_PUBLIC_PUSHER_KEY;
-    const cluster = process.env.NEXT_PUBLIC_PUSHER_CLUSTER;
-
-    // If Pusher env vars are available, connect via WebSocket
-    if (key && cluster) {
-      try {
-        const pusher = new PusherClient(key, { cluster });
-        const channel = pusher.subscribe(`room-${roomId}`);
-        channel.bind('sync', applyState);
-
-        return () => {
-          channel.unbind_all();
-          pusher.unsubscribe(`room-${roomId}`);
-          pusher.disconnect();
-        };
-      } catch (e) {
-        console.warn('Pusher failed, falling back to polling', e);
-      }
-    }
-
-    // Fallback: polling every 2s if Pusher isn't available
     const poll = async () => {
       try {
         const res = await fetch(`/api/sync?roomId=${roomId}`);
@@ -65,12 +44,34 @@ export default function VideoPlayer({ roomId, videoUrl, isHost }) {
         if (data?.state) applyState(data.state);
       } catch {}
     };
-    pollRef.current = setInterval(poll, 2000);
+
+    // First poll immediately
     poll();
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+    const id = setInterval(poll, 2000);
+    return () => clearInterval(id);
   }, [isHost, primed, roomId, applyState]);
 
-  // ---- HOST: push state to server ----
+  // ---- ALSO connect Pusher for instant sync (if available) ----
+  useEffect(() => {
+    if (isHost || !primed) return;
+
+    const key = process.env.NEXT_PUBLIC_PUSHER_KEY;
+    const cluster = process.env.NEXT_PUBLIC_PUSHER_CLUSTER;
+    if (!key || !cluster) return;
+
+    let pusher;
+    try {
+      pusher = new PusherClient(key, { cluster });
+      const channel = pusher.subscribe(`room-${roomId}`);
+      channel.bind('sync', applyState);
+    } catch {}
+
+    return () => {
+      try { pusher?.disconnect(); } catch {}
+    };
+  }, [isHost, primed, roomId, applyState]);
+
+  // ---- HOST: push state via Pusher API (saves to Redis + broadcasts) ----
   const pushState = useCallback(async (isPlaying, time) => {
     if (!isHost) return;
 
