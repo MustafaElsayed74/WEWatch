@@ -1,4 +1,4 @@
-import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { NextResponse } from 'next/server';
 
@@ -15,10 +15,10 @@ const s3 = new S3Client({
     accessKeyId: B2_KEY_ID,
     secretAccessKey: B2_APP_KEY,
   },
-  forcePathStyle: true, // Required for B2
+  forcePathStyle: true,
 });
 
-// GET: Generate a presigned upload URL (client uploads directly to B2)
+// GET: Generate presigned upload URL + presigned download URL (both work with private buckets)
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
   const filename = searchParams.get('filename');
@@ -28,22 +28,24 @@ export async function GET(request) {
     return NextResponse.json({ error: 'Missing filename' }, { status: 400 });
   }
 
-  // Unique key to avoid collisions
   const key = `videos/${Date.now()}-${filename}`;
 
   try {
-    const command = new PutObjectCommand({
-      Bucket: B2_BUCKET,
-      Key: key,
-      ContentType: contentType,
-    });
+    // Presigned PUT URL for upload (1 hour)
+    const uploadUrl = await getSignedUrl(
+      s3,
+      new PutObjectCommand({ Bucket: B2_BUCKET, Key: key, ContentType: contentType }),
+      { expiresIn: 3600 }
+    );
 
-    const uploadUrl = await getSignedUrl(s3, command, { expiresIn: 3600 });
+    // Presigned GET URL for streaming (6 hours — matches room TTL)
+    const streamUrl = await getSignedUrl(
+      s3,
+      new GetObjectCommand({ Bucket: B2_BUCKET, Key: key }),
+      { expiresIn: 21600 }
+    );
 
-    // Public URL for streaming (bucket must be public)
-    const publicUrl = `https://f005.backblazeb2.com/file/${B2_BUCKET}/${key}`;
-
-    return NextResponse.json({ uploadUrl, publicUrl, key });
+    return NextResponse.json({ uploadUrl, streamUrl, key });
   } catch (error) {
     console.error('Presign error:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -53,9 +55,7 @@ export async function GET(request) {
 // DELETE: Remove a video from B2
 export async function DELETE(request) {
   const { key } = await request.json();
-  if (!key) {
-    return NextResponse.json({ error: 'Missing key' }, { status: 400 });
-  }
+  if (!key) return NextResponse.json({ error: 'Missing key' }, { status: 400 });
 
   try {
     await s3.send(new DeleteObjectCommand({ Bucket: B2_BUCKET, Key: key }));

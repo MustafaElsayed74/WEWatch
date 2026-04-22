@@ -26,7 +26,7 @@ export default function UploadModal({ roomId, setVideoUrl }) {
       const presignRes = await fetch(
         `/api/upload?filename=${encodeURIComponent(file.name)}&contentType=${encodeURIComponent(file.type)}`
       );
-      const { uploadUrl, publicUrl, key } = await presignRes.json();
+      const { uploadUrl, streamUrl, key } = await presignRes.json();
       if (!uploadUrl) throw new Error('Failed to get upload URL');
 
       setProgress(10);
@@ -62,12 +62,12 @@ export default function UploadModal({ roomId, setVideoUrl }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           roomId,
-          state: { videoUrl: publicUrl, videoKey: key, isPlaying: false, time: 0, timestamp: Date.now() },
+          state: { videoUrl: streamUrl, videoKey: key, isPlaying: false, time: 0, timestamp: Date.now() },
         }),
       });
 
       setProgress(100);
-      setVideoUrl(publicUrl);
+      setVideoUrl(streamUrl);
     } catch (err) {
       console.error('Upload error:', err);
       alert('Upload failed: ' + err.message);
