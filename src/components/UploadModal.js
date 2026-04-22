@@ -7,106 +7,90 @@ export default function UploadModal({ roomId, setVideoUrl }) {
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [fileName, setFileName] = useState('');
 
   const handleDragOver = (e) => { e.preventDefault(); setIsDragging(true); };
   const handleDragLeave = () => setIsDragging(false);
-
   const handleDrop = (e) => {
-    e.preventDefault();
-    setIsDragging(false);
+    e.preventDefault(); setIsDragging(false);
     const file = e.dataTransfer.files[0];
     if (file && file.type.startsWith('video/')) uploadFile(file);
     else alert('Please drop a video file.');
   };
-
-  const handleFileSelect = (e) => {
-    const file = e.target.files[0];
-    if (file) uploadFile(file);
-  };
+  const handleFileSelect = (e) => { const f = e.target.files[0]; if (f) uploadFile(f); };
 
   const uploadFile = async (file) => {
-    setIsUploading(true);
-    setProgress(5);
-
+    setIsUploading(true); setProgress(3); setFileName(file.name);
     try {
-      const newBlob = await upload(file.name, file, {
-        access: 'public',
-        handleUploadUrl: '/api/upload',
-        onUploadProgress: (evt) => {
-          setProgress(Math.round(evt.percentage || 50));
-        },
+      const blob = await upload(file.name, file, {
+        access: 'public', handleUploadUrl: '/api/upload',
+        onUploadProgress: (e) => setProgress(Math.round(e.percentage || 50)),
       });
-
-      // Mark self as host
       sessionStorage.setItem('weWatchHost_' + roomId, 'true');
-      setVideoUrl(newBlob.url);
-
-      // Save room state
+      setVideoUrl(blob.url);
       await fetch('/api/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          roomId,
-          state: { videoUrl: newBlob.url, isPlaying: false, time: 0, timestamp: Date.now() },
-        }),
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ roomId, state: { videoUrl: blob.url, isPlaying: false, time: 0, timestamp: Date.now() } }),
       });
-    } catch (error) {
-      console.error('Upload error:', error);
-      alert('Upload failed: ' + error.message);
-    } finally {
-      setIsUploading(false);
-    }
+    } catch (err) {
+      console.error('Upload error:', err); alert('Upload failed: ' + err.message);
+    } finally { setIsUploading(false); }
   };
 
   return (
-    <div className="glass w-full max-w-lg p-10 animate-up">
+    <div className="glass glass-glow w-full max-w-lg p-10 animate-up">
+      {/* Header */}
       <div className="text-center mb-8">
-        <h2 className="text-2xl font-bold text-white mb-2">Upload a Movie</h2>
-        <p className="text-muted text-sm">Drop a video file to start watching together.</p>
+        <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl mb-4"
+             style={{ background: 'rgba(139,92,246,.1)', border: '1px solid rgba(139,92,246,.12)' }}>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary-light)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+            <polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+          </svg>
+        </div>
+        <h2 className="text-xl font-bold text-white mb-1">Upload a movie</h2>
+        <p className="text-muted text-sm">Share something to watch together</p>
       </div>
 
+      {/* Dropzone */}
       <div
-        className="relative rounded-2xl p-10 flex flex-col items-center justify-center text-center transition-all duration-300"
+        className="relative rounded-2xl flex flex-col items-center justify-center text-center transition-all duration-300 group"
         style={{
-          minHeight: 240,
-          border: `1px dashed ${isDragging ? 'var(--color-primary)' : 'rgba(255,255,255,.08)'}`,
-          background: isDragging ? 'rgba(168,85,247,.04)' : 'rgba(0,0,0,.2)',
+          minHeight: 220,
+          padding: '2rem',
+          border: `1px dashed ${isDragging ? 'var(--color-primary)' : 'rgba(255,255,255,.06)'}`,
+          background: isDragging ? 'rgba(139,92,246,.04)' : 'rgba(0,0,0,.15)',
         }}
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
+        onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}
       >
         {isUploading ? (
-          <div className="w-full max-w-xs">
-            {/* Spinner */}
-            <div className="w-12 h-12 mx-auto mb-5 rounded-full spinner"
+          <div className="w-full max-w-xs animate-in">
+            <div className="w-10 h-10 mx-auto mb-4 rounded-full spinner"
                  style={{ border: '2px solid rgba(255,255,255,.06)', borderTopColor: 'var(--color-primary)' }}></div>
-            <div className="flex justify-between text-xs font-mono text-muted mb-2">
-              <span>UPLOADING</span>
-              <span>{progress}%</span>
+            <p className="text-white text-sm font-medium mb-1 truncate max-w-[200px] mx-auto">{fileName}</p>
+            <div className="flex justify-between text-[10px] font-mono text-muted tracking-widest mb-2 mt-3">
+              <span>UPLOADING</span><span>{progress}%</span>
             </div>
-            <div className="w-full h-1.5 rounded-full overflow-hidden" style={{ background: 'rgba(0,0,0,.4)' }}>
-              <div className="h-full rounded-full transition-all duration-300"
-                   style={{ width: `${progress}%`, background: 'linear-gradient(90deg, var(--color-accent), var(--color-primary))' }}></div>
+            <div className="w-full h-1 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,.04)' }}>
+              <div className="h-full rounded-full transition-all duration-500 ease-out"
+                   style={{ width: `${progress}%`, background: 'linear-gradient(90deg, var(--color-primary), var(--color-accent))' }} />
             </div>
           </div>
         ) : (
-          <>
-            <div className="w-14 h-14 rounded-full flex items-center justify-center mb-5"
-                 style={{ background: 'rgba(255,255,255,.03)', border: '1px solid rgba(255,255,255,.06)' }}>
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-muted">
-                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
-                <polyline points="17 8 12 3 7 8"/>
-                <line x1="12" y1="3" x2="12" y2="15"/>
+          <div className="animate-in">
+            <div className="w-12 h-12 mx-auto rounded-full flex items-center justify-center mb-4 transition-transform duration-300 group-hover:scale-110"
+                 style={{ background: 'rgba(255,255,255,.03)', border: '1px solid rgba(255,255,255,.05)' }}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-muted transition-colors group-hover:text-primary-light" style={{ transition: 'color .3s' }}>
+                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
               </svg>
             </div>
-            <p className="text-white font-medium mb-1">Drop your video here</p>
-            <p className="text-muted text-xs mb-6">MP4, WEBM — any size</p>
+            <p className="text-white text-sm font-medium mb-1">Drop your video here</p>
+            <p className="text-muted text-xs mb-5">MP4, WEBM — any size</p>
             <input type="file" id="fileInput" accept="video/*" className="hidden" onChange={handleFileSelect} />
-            <label htmlFor="fileInput" className="btn btn-outline text-sm cursor-pointer">
-              Browse Files
+            <label htmlFor="fileInput" className="btn btn-outline text-xs cursor-pointer">
+              Browse files
             </label>
-          </>
+          </div>
         )}
       </div>
     </div>

@@ -123,50 +123,61 @@ export default function VideoPlayer({ roomId, videoUrl, isHost }) {
 
   return (
     <div className="w-full">
-      <div className="glass overflow-hidden relative" style={{ padding: 0, borderRadius: 16, background: '#000' }}>
-        <video
-          ref={videoRef}
-          src={videoUrl}
-          controls={isHost}
-          playsInline
-          className="w-full block"
-          style={{ maxHeight: '78vh', objectFit: 'contain' }}
-          onPlay={isHost ? onPlay : undefined}
-          onPause={isHost ? onPause : undefined}
-          onSeeked={isHost ? onSeeked : undefined}
-        />
+      {/* Ambient glow behind video */}
+      <div className="relative">
+        <div className="absolute -inset-4 rounded-3xl opacity-20 blur-2xl -z-10 pointer-events-none"
+             style={{ background: 'linear-gradient(135deg, var(--color-primary), transparent 60%)' }} />
 
-        {/* Guest priming overlay — shown ONCE before any play attempt */}
-        {!isHost && !primed && (
-          <div
-            className="absolute inset-0 flex items-center justify-center cursor-pointer"
-            style={{ background: 'rgba(0,0,0,.75)', zIndex: 10 }}
-            onClick={handlePrimer}
-          >
-            <div className="flex flex-col items-center gap-5">
-              <div
-                className="w-24 h-24 rounded-full flex items-center justify-center"
-                style={{
-                  background: 'linear-gradient(135deg, var(--color-primary), var(--color-primary-dark))',
-                  boxShadow: '0 0 60px rgba(168,85,247,.4)',
-                }}
-              >
-                <svg width="36" height="36" viewBox="0 0 24 24" fill="#fff" strokeWidth="0">
-                  <polygon points="6 3 20 12 6 21 6 3"/>
-                </svg>
+        <div className="glass overflow-hidden relative" style={{ padding: 0, borderRadius: 20, background: '#000' }}>
+          <video
+            ref={videoRef}
+            src={videoUrl}
+            controls={isHost}
+            playsInline
+            className="w-full block"
+            style={{ maxHeight: '78vh', objectFit: 'contain' }}
+            onPlay={isHost ? onPlay : undefined}
+            onPause={isHost ? onPause : undefined}
+            onSeeked={isHost ? onSeeked : undefined}
+          />
+
+          {/* Guest priming overlay */}
+          {!isHost && !primed && (
+            <div
+              className="absolute inset-0 flex items-center justify-center cursor-pointer animate-in"
+              style={{ background: 'rgba(0,0,0,.8)', backdropFilter: 'blur(4px)', zIndex: 10 }}
+              onClick={handlePrimer}
+            >
+              <div className="flex flex-col items-center gap-6">
+                {/* Pulsing play button */}
+                <div className="relative">
+                  <div className="w-24 h-24 rounded-full flex items-center justify-center relative z-10"
+                       style={{ background: 'linear-gradient(135deg, var(--color-primary), var(--color-primary-dark))', boxShadow: '0 8px 40px rgba(139,92,246,.4)' }}>
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="#fff" strokeWidth="0">
+                      <polygon points="7 4 19 12 7 20 7 4"/>
+                    </svg>
+                  </div>
+                  {/* Pulse ring */}
+                  <div className="absolute inset-0 rounded-full animate-ping opacity-20"
+                       style={{ background: 'var(--color-primary)' }} />
+                </div>
+                <div className="text-center">
+                  <p className="text-white text-base font-semibold mb-1">Click to join the room</p>
+                  <p className="text-sm text-muted">You&apos;ll sync with the host automatically</p>
+                </div>
               </div>
-              <span className="text-white text-base font-semibold">Click to join the room</span>
-              <span className="text-sm" style={{ color: 'var(--color-muted)' }}>You&apos;ll sync with the host automatically</span>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {/* Status bar */}
-      <div className="flex items-center justify-center gap-2 mt-3 text-xs text-muted">
+      <div className="glass flex items-center justify-center gap-2.5 mt-3 py-2.5 px-4 mx-auto w-fit" style={{ borderRadius: 100 }}>
         <span className="w-1.5 h-1.5 rounded-full"
-              style={{ background: isHost ? 'var(--color-primary)' : 'var(--color-muted)' }}></span>
-        {isHost ? 'You control playback' : primed ? 'Synced with host' : 'Click above to join'}
+              style={{ background: isHost ? 'var(--color-success)' : primed ? 'var(--color-success)' : 'var(--color-muted)', animation: primed || isHost ? 'pulse 2s ease-in-out infinite' : 'none' }}></span>
+        <span className="text-[11px] font-medium" style={{ color: isHost || primed ? '#94a3b8' : 'var(--color-muted)' }}>
+          {isHost ? 'You control playback' : primed ? 'Synced with host' : 'Tap to connect'}
+        </span>
       </div>
     </div>
   );
